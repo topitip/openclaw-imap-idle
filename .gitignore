@@ -1,0 +1,5 @@
+*.pyc
+__pycache__/
+*.pid
+nohup.out
+.DS_Store

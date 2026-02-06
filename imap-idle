@@ -1,0 +1,216 @@
+#!/usr/bin/env bash
+#
+# IMAP IDLE listener management CLI
+#
+# Usage:
+#   imap-idle start    - Start listener in background
+#   imap-idle stop     - Stop listener
+#   imap-idle restart  - Restart listener
+#   imap-idle status   - Check if running
+#   imap-idle logs     - Show recent logs
+#   imap-idle setup    - Run interactive setup
+#
+
+set -e
+
+SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LISTENER_SCRIPT="$SKILL_DIR/scripts/listener.py"
+SETUP_SCRIPT="$SKILL_DIR/scripts/setup.py"
+CONFIG_FILE="${IMAP_IDLE_CONFIG:-$HOME/.openclaw/imap-idle.json}"
+PID_FILE="${IMAP_IDLE_PID:-$HOME/.openclaw/imap-idle.pid}"
+LOG_FILE="${IMAP_IDLE_LOG:-$HOME/.openclaw/logs/imap-idle.log}"
+
+command="$1"
+
+check_config() {
+    if [[ ! -f "$CONFIG_FILE" ]]; then
+        echo "❌ Config file not found: $CONFIG_FILE"
+        echo "Run: imap-idle setup"
+        exit 1
+    fi
+}
+
+check_dependencies() {
+    if ! python3 -c "import imapclient" 2>/dev/null; then
+        echo "❌ imapclient library not installed"
+        echo "Run: pip3 install imapclient --user --break-system-packages"
+        exit 1
+    fi
+}
+
+cmd_start() {
+    check_config
+    check_dependencies
+    
+    if [[ -f "$PID_FILE" ]]; then
+        pid=$(cat "$PID_FILE")
+        if ps -p "$pid" > /dev/null 2>&1; then
+            echo "✅ Already running (PID: $pid)"
+            exit 0
+        else
+            rm -f "$PID_FILE"
+        fi
+    fi
+    
+    echo "🚀 Starting IMAP IDLE listener..."
+    
+    # Create log directory
+    mkdir -p "$(dirname "$LOG_FILE")"
+    
+    # Start listener in background
+    nohup python3 -u "$LISTENER_SCRIPT" --config "$CONFIG_FILE" >> "$LOG_FILE" 2>&1 &
+    pid=$!
+    
+    echo "$pid" > "$PID_FILE"
+    
+    # Wait a moment and check if it's still running
+    sleep 2
+    if ps -p "$pid" > /dev/null 2>&1; then
+        echo "✅ Started (PID: $pid)"
+        echo "📝 Logs: $LOG_FILE"
+    else
+        echo "❌ Failed to start. Check logs:"
+        echo "   tail -n 20 $LOG_FILE"
+        rm -f "$PID_FILE"
+        exit 1
+    fi
+}
+
+cmd_stop() {
+    if [[ ! -f "$PID_FILE" ]]; then
+        echo "⏹️  Not running"
+        exit 0
+    fi
+    
+    pid=$(cat "$PID_FILE")
+    
+    if ! ps -p "$pid" > /dev/null 2>&1; then
+        echo "⏹️  Not running (stale PID file)"
+        rm -f "$PID_FILE"
+        exit 0
+    fi
+    
+    echo "⏹️  Stopping listener (PID: $pid)..."
+    kill "$pid"
+    
+    # Wait for graceful shutdown (max 5 seconds)
+    for i in {1..10}; do
+        if ! ps -p "$pid" > /dev/null 2>&1; then
+            rm -f "$PID_FILE"
+            echo "✅ Stopped"
+            exit 0
+        fi
+        sleep 0.5
+    done
+    
+    # Force kill if still running
+    echo "⚠️  Force killing..."
+    kill -9 "$pid" 2>/dev/null || true
+    rm -f "$PID_FILE"
+    echo "✅ Stopped (forced)"
+}
+
+cmd_restart() {
+    cmd_stop
+    sleep 1
+    cmd_start
+}
+
+cmd_status() {
+    if [[ ! -f "$PID_FILE" ]]; then
+        echo "⏹️  Not running"
+        exit 1
+    fi
+    
+    pid=$(cat "$PID_FILE")
+    
+    if ps -p "$pid" > /dev/null 2>&1; then
+        echo "✅ Running (PID: $pid)"
+        
+        # Show thread count (one per account + main)
+        thread_count=$(ps -T -p "$pid" | tail -n +2 | wc -l)
+        echo "📊 Threads: $thread_count"
+        
+        # Show uptime
+        start_time=$(ps -o lstart= -p "$pid")
+        echo "⏱️  Started: $start_time"
+        
+        exit 0
+    else
+        echo "⏹️  Not running (stale PID file)"
+        rm -f "$PID_FILE"
+        exit 1
+    fi
+}
+
+cmd_logs() {
+    lines="${2:-50}"
+    
+    if [[ ! -f "$LOG_FILE" ]]; then
+        echo "❌ Log file not found: $LOG_FILE"
+        exit 1
+    fi
+    
+    echo "📝 Last $lines lines from $LOG_FILE:"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    tail -n "$lines" "$LOG_FILE"
+}
+
+cmd_setup() {
+    python3 "$SETUP_SCRIPT"
+}
+
+cmd_help() {
+    cat << 'EOF'
+IMAP IDLE listener management
+
+Usage:
+  imap-idle start    - Start listener in background
+  imap-idle stop     - Stop listener
+  imap-idle restart  - Restart listener
+  imap-idle status   - Check if running
+  imap-idle logs     - Show recent logs (default: 50 lines)
+  imap-idle logs N   - Show last N lines
+  imap-idle setup    - Run interactive setup
+
+Configuration:
+  Config: $IMAP_IDLE_CONFIG or ~/.openclaw/imap-idle.json
+  PID:    $IMAP_IDLE_PID or ~/.openclaw/imap-idle.pid
+  Log:    $IMAP_IDLE_LOG or ~/.openclaw/logs/imap-idle.log
+
+Examples:
+  imap-idle start
+  imap-idle logs 100
+  imap-idle status && echo "All good!"
+EOF
+}
+
+case "$command" in
+    start)
+        cmd_start
+        ;;
+    stop)
+        cmd_stop
+        ;;
+    restart)
+        cmd_restart
+        ;;
+    status)
+        cmd_status
+        ;;
+    logs)
+        cmd_logs "$@"
+        ;;
+    setup)
+        cmd_setup
+        ;;
+    help|--help|-h|"")
+        cmd_help
+        ;;
+    *)
+        echo "❌ Unknown command: $command"
+        echo ""
+        cmd_help
+        exit 1
+        ;;
+esac

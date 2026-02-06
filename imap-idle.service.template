@@ -1,0 +1,23 @@
+[Unit]
+Description=IMAP IDLE Listener for OpenClaw
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=%USER%
+ExecStart=%PYTHON% %LISTENER_SCRIPT% --config %CONFIG_FILE%
+Restart=always
+RestartSec=10
+StandardOutput=append:%LOG_FILE%
+StandardError=append:%LOG_FILE%
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%LOG_DIR%
+
+[Install]
+WantedBy=multi-user.target
