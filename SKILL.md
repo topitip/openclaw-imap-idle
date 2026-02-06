@@ -109,7 +109,8 @@ Config file: `~/.openclaw/imap-idle.json`
   "webhook_token": "your-webhook-token",
   "log_file": "~/.openclaw/logs/imap-idle.log",
   "idle_timeout": 300,
-  "reconnect_interval": 900
+  "reconnect_interval": 900,
+  "debounce_seconds": 10
 }
 ```
 
@@ -120,18 +121,22 @@ Config file: `~/.openclaw/imap-idle.json`
 - `log_file` - Path to log file (null for stdout)
 - `idle_timeout` - IDLE check timeout in seconds (default: 300 = 5 min)
 - `reconnect_interval` - Full reconnect interval in seconds (default: 900 = 15 min)
+- `debounce_seconds` - Batch events for N seconds before webhook (default: 10 sec)
 
 ## How It Works
 
 1. **Connect**: Opens persistent IMAP connection per account
 2. **IDLE**: Enters IDLE mode (server will push notifications)
 3. **Wait**: Blocks until server sends "new mail" notification
-4. **Fetch**: Retrieves new email headers (From, Subject)
-5. **Webhook**: Triggers OpenClaw webhook with email info
-6. **Resume**: Re-enters IDLE mode
+4. **Fetch**: Retrieves new email headers (From, Subject, body preview)
+5. **Queue**: Adds event to debounce buffer (batches for 10 seconds)
+6. **Webhook**: Sends batched events via webhook (single or grouped)
+7. **Resume**: Re-enters IDLE mode
 
 **Key Implementation Details:**
 
+- **Debouncing**: Batches emails for 10 seconds before webhook to prevent flooding during spikes (e.g., GitHub mention storms)
+- **Smart Batching**: Single email → full details, multiple emails → grouped summary with counts
 - **UID Tracking**: Tracks last processed message UID per account to prevent duplicate webhooks
 - **Keep-alive**: IDLE timeout every 5 minutes, sends NOOP command
 - **Reconnect**: Full reconnect every 15 minutes to prevent stale connections
