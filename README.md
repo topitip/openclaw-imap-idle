@@ -22,7 +22,7 @@ Event-driven email monitoring for [OpenClaw](https://github.com/openclaw/opencla
 
 ```bash
 # Download and install skill
-wget https://github.com/YOUR_USERNAME/openclaw-imap-idle/releases/latest/download/imap-idle.skill
+wget https://github.com/topitip/openclaw-imap-idle/releases/latest/download/imap-idle.skill
 openclaw skill install imap-idle.skill
 ```
 
