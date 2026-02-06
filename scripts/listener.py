@@ -63,12 +63,14 @@ class IMAPIdleListener:
         )
         self.logger = logging.getLogger(__name__)
     
-    def trigger_webhook(self, account, from_addr, subject):
+    def trigger_webhook(self, account, from_addr, subject, body_preview=""):
         """Trigger OpenClaw webhook with email notification"""
         try:
-            # Truncate message to reasonable length
+            # Build notification with body preview
             text = f"📧 New email in {account}:\nFrom: {from_addr}\nSubject: {subject}"
-            text = text[:500]
+            if body_preview:
+                text += f"\n\n{body_preview}"
+            text = text[:1000]  # Increased limit for body preview
             
             payload = {
                 "text": text,
@@ -92,6 +94,20 @@ class IMAPIdleListener:
                 
         except Exception as e:
             self.logger.error(f"❌ Webhook failed for {account}: {e}")
+    
+    def parse_email_body(self, body_data):
+        """Parse and extract preview from email body"""
+        if not body_data:
+            return ""
+        
+        try:
+            body_text = body_data.decode('utf-8', errors='ignore')
+            # Take first 500 chars, strip excessive whitespace
+            lines = [line.strip() for line in body_text.split('\n') if line.strip()]
+            preview = '\n'.join(lines[:10])  # First 10 non-empty lines
+            return preview[:500]
+        except Exception:
+            return ""
     
     def parse_email_headers(self, header_data):
         """Parse From and Subject from email headers"""
@@ -168,17 +184,20 @@ class IMAPIdleListener:
                             
                             # Only process if this is a NEW message
                             if latest_uid != last_uid:
-                                # Fetch headers
+                                # Fetch headers and body preview
                                 msg_data = client.fetch(
                                     [latest_uid],
-                                    ['BODY.PEEK[HEADER.FIELDS (FROM SUBJECT)]']
+                                    ['BODY.PEEK[HEADER.FIELDS (FROM SUBJECT)]', 'BODY.PEEK[TEXT]']
                                 )
                                 
                                 header_data = msg_data[latest_uid][b'BODY[HEADER.FIELDS (FROM SUBJECT)]']
                                 from_addr, subject = self.parse_email_headers(header_data)
                                 
-                                # Trigger webhook
-                                self.trigger_webhook(username, from_addr, subject)
+                                body_data = msg_data[latest_uid].get(b'BODY[TEXT]', b'')
+                                body_preview = self.parse_email_body(body_data)
+                                
+                                # Trigger webhook with body preview
+                                self.trigger_webhook(username, from_addr, subject, body_preview)
                                 
                                 # Update last processed UID
                                 last_uid = latest_uid
