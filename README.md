@@ -21,8 +21,13 @@ Event-driven email monitoring for [OpenClaw](https://github.com/openclaw/opencla
 ### 1. Install Skill
 
 ```bash
-# Download and install skill
+# Download skill (wget):
 wget https://github.com/topitip/openclaw-imap-idle/releases/latest/download/imap-idle.skill
+
+# Or with curl:
+curl -L -o imap-idle.skill https://github.com/topitip/openclaw-imap-idle/releases/latest/download/imap-idle.skill
+
+# Install
 openclaw skill install imap-idle.skill
 ```
 
