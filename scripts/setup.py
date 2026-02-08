@@ -10,6 +10,13 @@ import json
 import getpass
 from pathlib import Path
 
+# Optional keyring support
+try:
+    import keyring
+    KEYRING_AVAILABLE = True
+except ImportError:
+    KEYRING_AVAILABLE = False
+
 
 def get_input(prompt, default=None):
     """Get user input with optional default"""
@@ -31,7 +38,7 @@ def get_yes_no(prompt, default=True):
     return value in ('y', 'yes')
 
 
-def setup_account():
+def setup_account(use_keyring=False):
     """Interactive account setup"""
     print("\n" + "="*60)
     print("IMAP Account Configuration")
@@ -43,13 +50,27 @@ def setup_account():
     password = getpass.getpass("Password: ")
     ssl = get_yes_no("Use SSL/TLS", True)
     
-    return {
+    account = {
         "host": host,
         "port": int(port),
         "username": username,
-        "password": password,
         "ssl": ssl
     }
+    
+    # Store password in keyring or config
+    if use_keyring:
+        try:
+            keyring.set_password('imap-idle', username, password)
+            print(f"✅ Password stored in system keyring for {username}")
+            # Don't include password in config
+        except Exception as e:
+            print(f"⚠️  Failed to store in keyring: {e}")
+            print("Falling back to config file storage")
+            account['password'] = password
+    else:
+        account['password'] = password
+    
+    return account
 
 
 def setup_webhook():
@@ -72,10 +93,28 @@ def main():
     print("IMAP IDLE Listener - Setup Wizard")
     print("="*60)
     
+    # Ask about keyring for secure password storage
+    use_keyring = False
+    if KEYRING_AVAILABLE:
+        print("\n🔐 Secure Password Storage")
+        print("="*60)
+        print("Keyring is available on your system!")
+        print("Passwords can be stored securely in system keychain instead of plain text config.")
+        print()
+        use_keyring = get_yes_no("Use keyring for password storage? (recommended)", True)
+        if use_keyring:
+            print("✅ Passwords will be stored in system keyring")
+        else:
+            print("⚠️  Passwords will be stored in config file (less secure)")
+    else:
+        print("\n⚠️  Keyring library not available")
+        print("Install with: pip3 install keyring --user")
+        print("Passwords will be stored in config file")
+    
     # Accounts
     accounts = []
     while True:
-        account = setup_account()
+        account = setup_account(use_keyring=use_keyring)
         accounts.append(account)
         
         if not get_yes_no("\nAdd another account?", False):
@@ -154,8 +193,23 @@ def test_connection(account):
         print("Run: pip3 install imapclient --user")
         return
     
+    # Get password (from keyring or config)
+    username = account['username']
+    password = account.get('password')
+    
+    if not password and KEYRING_AVAILABLE:
+        try:
+            password = keyring.get_password('imap-idle', username)
+        except Exception as e:
+            print(f"❌ Could not retrieve password from keyring: {e}")
+            return
+    
+    if not password:
+        print(f"❌ No password available for {username}")
+        return
+    
     try:
-        print(f"Connecting to {account['username']}@{account['host']}...")
+        print(f"Connecting to {username}@{account['host']}...")
         
         client = IMAPClient(
             account['host'],
@@ -164,7 +218,7 @@ def test_connection(account):
             timeout=10
         )
         
-        client.login(account['username'], account['password'])
+        client.login(username, password)
         client.select_folder('INBOX')
         
         messages = client.search(['ALL'])

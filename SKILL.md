@@ -47,6 +47,14 @@ Restart gateway: `openclaw gateway restart`
 pip3 install imapclient --user --break-system-packages
 ```
 
+**Optional but recommended:** Install keyring for secure password storage:
+
+```bash
+pip3 install keyring --user --break-system-packages
+```
+
+With keyring, passwords are stored in your system's secure keychain (macOS Keychain, GNOME Keyring, etc.) instead of plain text in config files.
+
 ### 3. Run Setup
 
 ```bash
@@ -122,6 +130,51 @@ Config file: `~/.openclaw/imap-idle.json`
 - `idle_timeout` - IDLE check timeout in seconds (default: 300 = 5 min)
 - `reconnect_interval` - Full reconnect interval in seconds (default: 900 = 15 min)
 - `debounce_seconds` - Batch events for N seconds before webhook (default: 10 sec)
+
+## Secure Password Storage (Keyring)
+
+**🔐 Recommended:** Store passwords in system keychain instead of config file.
+
+### Setup with Keyring
+
+When you run `./imap-idle setup`, the wizard will ask if you want to use keyring. If you say yes:
+- Passwords are stored in your system's secure keychain
+- Config file only contains usernames (no passwords)
+- Keyring uses OS-level encryption
+
+### Manual Keyring Setup
+
+If you already have a config with plain text passwords, migrate to keyring:
+
+```bash
+# Install keyring
+pip3 install keyring --user --break-system-packages
+
+# Store password for each account
+python3 -c "
+import keyring, getpass
+username = 'user@example.com'
+password = getpass.getpass(f'Password for {username}: ')
+keyring.set_password('imap-idle', username, password)
+"
+
+# Remove password from config
+# Edit ~/.openclaw/imap-idle.json and remove "password" field
+```
+
+### How Keyring Works
+
+The listener automatically tries keyring first, then falls back to config:
+1. Try `keyring.get_password('imap-idle', username)`
+2. If not found, use `config['password']`
+3. If still no password, abort connection
+
+### Security Benefits
+
+- ✅ No plain text passwords in config files
+- ✅ OS-level encryption (macOS Keychain, GNOME Keyring, Windows Credential Manager)
+- ✅ Reduces VirusTotal false positives
+- ✅ Better security audit trail
 
 ## How It Works
 

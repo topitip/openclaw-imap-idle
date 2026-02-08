@@ -43,6 +43,13 @@ except ImportError:
     print("Install with: pip3 install imapclient --user", file=sys.stderr)
     sys.exit(1)
 
+# Optional keyring support for secure credential storage
+try:
+    import keyring
+    KEYRING_AVAILABLE = True
+except ImportError:
+    KEYRING_AVAILABLE = False
+
 
 class IMAPIdleListener:
     def __init__(self, config):
@@ -68,6 +75,34 @@ class IMAPIdleListener:
             ]
         )
         self.logger = logging.getLogger(__name__)
+    
+    def get_password(self, username, account_config):
+        """
+        Get password for account with secure fallback:
+        1. Try keyring (if available)
+        2. Fall back to config file
+        
+        Returns password string or None
+        """
+        # Try keyring first (most secure)
+        if KEYRING_AVAILABLE:
+            try:
+                password = keyring.get_password('imap-idle', username)
+                if password:
+                    self.logger.debug(f"🔐 Using keyring password for {username}")
+                    return password
+            except Exception as e:
+                self.logger.warning(f"⚠️  Keyring access failed for {username}: {e}")
+        
+        # Fall back to config file
+        password = account_config.get('password')
+        if password:
+            self.logger.debug(f"📄 Using config file password for {username}")
+            return password
+        
+        # No password found
+        self.logger.error(f"❌ No password found for {username} (not in keyring or config)")
+        return None
     
     def queue_event(self, account, from_addr, subject, body_preview=""):
         """Queue an email event for debounced webhook trigger"""
@@ -246,8 +281,13 @@ class IMAPIdleListener:
         host = account_config['host']
         port = account_config.get('port', 993)
         username = account_config['username']
-        password = account_config['password']
+        password = self.get_password(username, account_config)
         ssl = account_config.get('ssl', True)
+        
+        # Abort if no password available
+        if not password:
+            self.logger.error(f"❌ Cannot monitor {username}: no password available")
+            return
         
         # Track last processed UID to prevent duplicates
         last_uid = None
