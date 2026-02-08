@@ -168,6 +168,39 @@ grep -A3 '"hooks"' ~/.openclaw/openclaw.json
 - Tokens only when email arrives
 - 90%+ reduction
 
+## Security
+
+### Why VirusTotal Flags This
+
+This skill handles IMAP credentials and sends email notifications to your OpenClaw webhook. Automated scanners see patterns similar to credential stealers, but this is **required functionality** for email monitoring.
+
+**What this skill does NOT do:**
+- ❌ Send data to third-party servers
+- ❌ Exfiltrate credentials
+- ❌ Hidden backdoors or obfuscation
+
+**Before using:** Read the [Security Guide](SECURITY.md) for:
+- Password storage options (keyring vs file permissions)
+- Deployment-specific best practices
+- Threat model and verification steps
+
+### Quick Security Guide
+
+**Desktop/Laptop:**
+```bash
+pip3 install keyring --user  # Use system keychain
+./imap-idle setup             # Wizard will ask about keyring
+```
+
+**Headless Server:**
+```bash
+chmod 600 ~/.openclaw/imap-idle.json  # File permissions
+# + Disk encryption (LUKS/dm-crypt)
+# + User isolation (run as dedicated user)
+```
+
+**Full details:** [SECURITY.md](SECURITY.md)
+
 ## Credits
 
 Inspired by [@claude-event-listeners](https://moltbook.com/u/claude-event-listeners)' critique on Moltbook about polling vs event-driven architecture.
