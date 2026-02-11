@@ -149,11 +149,11 @@ class IMAPIdleListener:
                 text = self._format_single_event(event)
             else:
                 # Multiple events - batch format
-                text = f"📬 {len(events)} new emails:\n\n"
+                text = f"📬 {len(events)} новых писем:\n\n"
                 
                 # Group GitHub notifications separately
-                github_events = [e for e in events if self._is_github_notification(e['from'])]
-                other_events = [e for e in events if not self._is_github_notification(e['from'])]
+                github_events = [e for e in events if 'github' in e['from'].lower()]
+                other_events = [e for e in events if 'github' not in e['from'].lower()]
                 
                 if github_events:
                     text += f"🔔 GitHub ({len(github_events)}):\n"
@@ -161,16 +161,16 @@ class IMAPIdleListener:
                         preview = self._format_github_preview(event)
                         text += f"  • {preview}\n"
                     if len(github_events) > 5:
-                        text += f"  • ... and {len(github_events) - 5} more\n"
+                        text += f"  • ... и ещё {len(github_events) - 5}\n"
                     text += "\n"
                 
                 if other_events:
-                    text += f"📧 Other ({len(other_events)}):\n"
+                    text += f"📧 Другие ({len(other_events)}):\n"
                     for event in other_events[:5]:  # Max 5
                         text += f"  • {event['account']}: {event['from'][:40]}\n"
                         text += f"    {event['subject'][:60]}\n"
                     if len(other_events) > 5:
-                        text += f"  • ... and {len(other_events) - 5} more\n"
+                        text += f"  • ... и ещё {len(other_events) - 5}\n"
             
             text = text[:2000]  # Limit total length
             
@@ -197,10 +197,6 @@ class IMAPIdleListener:
         except Exception as e:
             self.logger.error(f"❌ Webhook failed: {e}")
     
-    def _is_github_notification(self, from_addr):
-        """Check if email is from GitHub"""
-        return 'github' in from_addr.lower() or 'noreply@github.com' in from_addr.lower()
-    
     def _format_single_event(self, event):
         """Format a single event for webhook"""
         account = event['account']
@@ -209,11 +205,25 @@ class IMAPIdleListener:
         body_preview = event['body_preview']
         
         # Special handling for GitHub notifications
-        if self._is_github_notification(from_addr):
-            # Parse GitHub notification type from subject/body
-            notification_type = self._parse_github_type(subject, body_preview)
+        if 'github' in from_addr.lower() and account == "a.parmeev@jakeberrimor.com":
+            # Parse GitHub notification type
+            if '@arkasha-ai' in subject or '@arkasha-ai' in body_preview:
+                icon = "💬"
+                action = "упомянули"
+            elif 'review requested' in subject.lower():
+                icon = "👀"
+                action = "запросили review"
+            elif 'assigned you' in subject.lower() or 'assigned to you' in subject.lower():
+                icon = "📌"
+                action = "назначили"
+            elif 'mentioned you' in subject.lower():
+                icon = "💬"
+                action = "mention"
+            else:
+                icon = "🔔"
+                action = "уведомление"
             
-            return f"{notification_type['icon']} GitHub: {notification_type['action']}\n{subject}\n\n{body_preview[:500]}"
+            return f"{icon} GitHub: тебя {action}\n{subject}\n\n{body_preview[:500]}"
         else:
             # Regular email notification
             text = f"📧 New email in {account}:\nFrom: {from_addr}\nSubject: {subject}"
@@ -221,32 +231,19 @@ class IMAPIdleListener:
                 text += f"\n\n{body_preview[:300]}"
             return text
     
-    def _parse_github_type(self, subject, body):
-        """Parse GitHub notification type from subject/body"""
-        subject_lower = subject.lower()
-        body_lower = body.lower()
-        
-        # Check for various GitHub notification types
-        if 'review requested' in subject_lower:
-            return {'icon': '👀', 'action': 'review requested'}
-        elif 'assigned you' in subject_lower or 'assigned to you' in subject_lower:
-            return {'icon': '📌', 'action': 'assigned'}
-        elif 'mentioned you' in subject_lower or 'mentioned you' in body_lower:
-            return {'icon': '💬', 'action': 'mentioned'}
-        elif 'commented' in subject_lower:
-            return {'icon': '💬', 'action': 'commented'}
-        elif 'opened' in subject_lower:
-            return {'icon': '✨', 'action': 'new issue/PR'}
-        else:
-            return {'icon': '🔔', 'action': 'notification'}
-    
     def _format_github_preview(self, event):
         """Format GitHub event for batch display"""
         subject = event['subject']
         body = event['body_preview']
         
-        notification_type = self._parse_github_type(subject, body)
-        return f"{notification_type['icon']} {notification_type['action']}: {subject[:50]}"
+        if '@arkasha-ai' in subject or '@arkasha-ai' in body:
+            return f"💬 mention: {subject[:60]}"
+        elif 'review requested' in subject.lower():
+            return f"👀 review: {subject[:60]}"
+        elif 'assigned' in subject.lower():
+            return f"📌 assigned: {subject[:60]}"
+        else:
+            return f"🔔 {subject[:60]}"
     
     def parse_email_body(self, body_data):
         """Parse and extract preview from email body"""
@@ -433,7 +430,7 @@ def load_config(config_path=None):
             print("Searched:", file=sys.stderr)
             for path in default_paths:
                 print(f"  - {path}", file=sys.stderr)
-            print("\nRun 'imap-idle setup' to create config", file=sys.stderr)
+            print("\nRun 'imap-idle-setup' to create config", file=sys.stderr)
             sys.exit(1)
     
     config_path = Path(config_path)
@@ -468,3 +465,22 @@ def main():
 
 if __name__ == '__main__':
     main()
+
+    def is_github_notification(self, from_addr, subject):
+        """Check if email is a GitHub notification"""
+        return ('github' in from_addr.lower() or 
+                'noreply@github.com' in from_addr.lower())
+    
+    def parse_github_notification(self, from_addr, subject, body_preview):
+        """Parse GitHub notification and extract mention/issue info"""
+        # GitHub notification patterns
+        if '@arkasha-ai' in subject or '@arkasha-ai' in body_preview:
+            return "💬 GitHub: тебя упомянули!"
+        elif 'review requested' in subject.lower():
+            return "👀 GitHub: запросили review"
+        elif 'assigned you' in subject.lower():
+            return "📌 GitHub: назначили на задачу"
+        elif 'mentioned you' in subject.lower():
+            return "💬 GitHub: mention"
+        else:
+            return "🔔 GitHub notification"
